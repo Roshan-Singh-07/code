@@ -428,6 +428,7 @@ export type InboxReportActionType =
   | "create_pr"
   | "open_pr"
   | "copy_link"
+  | "discuss"
   | "expand_signal"
   | "collapse_signal"
   | "expand_signal_section"
@@ -504,6 +505,11 @@ export interface InboxReportActionProperties {
   signal_section?: "relevant_code" | "data_queried";
   why_field?: "priority" | "actionability";
   task_section?: "research" | "implementation";
+  // True when the user submitted Discuss with a first question via the popover.
+  has_question?: boolean;
+  // The first question text the user typed before hitting Discuss. Truncated to
+  // 500 chars to keep event payloads bounded.
+  question_text?: string;
 }
 
 // Subscription / billing events
