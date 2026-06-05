@@ -237,7 +237,7 @@ function InlineEditInput({
     const input = inputRef.current;
     if (input) {
       input.focus();
-      input.setSelectionRange(input.value.length, input.value.length);
+      input.select();
     }
   }, []);
 
