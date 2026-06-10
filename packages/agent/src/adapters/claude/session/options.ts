@@ -360,6 +360,11 @@ function ensureLocalSettings(cwd: string): void {
   }
 }
 
+// The legacy CLI ships as cli.js; native binaries have no file extension.
+function isLegacyJavaScriptClaudeExecutable(executablePath: string): boolean {
+  return executablePath.endsWith(".js");
+}
+
 export function buildSessionOptions(params: BuildOptionsParams): Options {
   ensureLocalSettings(params.cwd);
 
@@ -375,6 +380,7 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
 
   const agents = buildAgents(params.userProvidedOptions?.agents);
   const registeredAgentNames = new Set(Object.keys(agents));
+  const claudeCodeExecutable = process.env.CLAUDE_CODE_EXECUTABLE;
 
   const options: Options = {
     ...params.userProvidedOptions,
@@ -387,7 +393,6 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     allowDangerouslySkipPermissions: !IS_ROOT || !!process.env.IS_SANDBOX,
     permissionMode: params.permissionMode,
     canUseTool: params.canUseTool,
-    executable: "node",
     tools,
     agents,
     extraArgs: {
@@ -427,8 +432,11 @@ export function buildSessionOptions(params: BuildOptionsParams): Options {
     }),
   };
 
-  if (process.env.CLAUDE_CODE_EXECUTABLE) {
-    options.pathToClaudeCodeExecutable = process.env.CLAUDE_CODE_EXECUTABLE;
+  if (claudeCodeExecutable) {
+    options.pathToClaudeCodeExecutable = claudeCodeExecutable;
+    if (isLegacyJavaScriptClaudeExecutable(claudeCodeExecutable)) {
+      options.executable = "node";
+    }
   }
 
   if (params.isResume) {
