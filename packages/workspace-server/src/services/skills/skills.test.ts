@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -178,6 +179,125 @@ describe("readSkillFile", () => {
     expect(await makeService().readSkillFile(skillPath, "alias.md")).toBe(
       "real content",
     );
+  });
+});
+
+describe("exportSkill", () => {
+  it("splits frontmatter from the body and collects text companion files", async () => {
+    const skillPath = await createSkill(
+      repoSkillsDir,
+      "alpha",
+      "---\nname: alpha\ndescription: About alpha\n---\n\n# Alpha body",
+    );
+    await mkdir(path.join(skillPath, "references"), { recursive: true });
+    await writeFile(path.join(skillPath, "references", "guide.md"), "guide");
+    await writeFile(
+      path.join(skillPath, "logo.bin"),
+      Buffer.from([0x89, 0x00, 0x4e, 0x47]),
+    );
+
+    const exported = await makeService().exportSkill(skillPath);
+
+    expect(exported).toEqual({
+      name: "alpha",
+      description: "About alpha",
+      body: "# Alpha body",
+      files: [{ path: "references/guide.md", content: "guide" }],
+      skipped: ["logo.bin"],
+    });
+  });
+
+  it("refuses to export non-writable skills", async () => {
+    await createSkill(path.join(pluginPath, "skills"), "bundled-skill");
+
+    await expect(
+      makeService().exportSkill(
+        path.join(pluginPath, "skills", "bundled-skill"),
+      ),
+    ).rejects.toThrow("Access denied");
+  });
+});
+
+describe("installTeamSkill", () => {
+  const input = {
+    name: "team-skill",
+    description: "From the team",
+    body: "# Team body",
+    files: [{ path: "references/guide.md", content: "guide" }],
+  };
+
+  it("requires overwrite for an existing skill, then replaces it", async () => {
+    // installTeamSkill writes to the real user skills root, so use a name
+    // that's vanishingly unlikely to exist and clean it up.
+    const { homedir } = await import("node:os");
+    const name = "posthog-code-test-skill-f4e84f1a";
+    const target = path.join(homedir(), ".claude", "skills", name);
+    const service = makeService();
+    try {
+      const first = await service.installTeamSkill({ ...input, name });
+      expect(first.path).toBe(target);
+
+      await expect(
+        service.installTeamSkill({ ...input, name }),
+      ).rejects.toThrow("already exists");
+
+      await service.installTeamSkill({ ...input, name, overwrite: true });
+      const manifest = await service.readSkillFile(target, "SKILL.md");
+      expect(manifest).toContain("From the team");
+      expect(manifest).toContain("# Team body");
+      const guide = await service.readSkillFile(target, "references/guide.md");
+      expect(guide).toBe("guide");
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects invalid names and unsafe file paths", async () => {
+    const service = makeService();
+
+    await expect(
+      service.installTeamSkill({ ...input, name: "../escape" }),
+    ).rejects.toThrow("Skill names must be");
+
+    const name = "posthog-code-test-skill-f4e84f1a";
+    const { homedir } = await import("node:os");
+    const target = path.join(homedir(), ".claude", "skills", name);
+    try {
+      await expect(
+        service.installTeamSkill({
+          ...input,
+          name,
+          files: [{ path: "../evil.md", content: "bad" }],
+        }),
+      ).rejects.toThrow("path outside skill directory");
+      expect(existsSync(target)).toBe(false);
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the existing skill when an overwrite payload is invalid", async () => {
+    const name = "posthog-code-test-skill-f4e84f1a";
+    const { homedir } = await import("node:os");
+    const target = path.join(homedir(), ".claude", "skills", name);
+    const service = makeService();
+    try {
+      await service.installTeamSkill({ ...input, name });
+
+      await expect(
+        service.installTeamSkill({
+          ...input,
+          name,
+          overwrite: true,
+          files: [{ path: "../evil.md", content: "bad" }],
+        }),
+      ).rejects.toThrow("path outside skill directory");
+
+      const manifest = await service.readSkillFile(target, "SKILL.md");
+      expect(manifest).toContain("# Team body");
+    } finally {
+      await rm(target, { recursive: true, force: true });
+    }
   });
 });
 

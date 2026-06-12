@@ -1,3 +1,4 @@
+import type { ExportedSkill as SharedExportedSkill } from "@posthog/shared";
 import { z } from "zod";
 
 export const skillSource = z.enum(["bundled", "user", "repo", "marketplace"]);
@@ -74,6 +75,37 @@ export const deleteSkillFileInput = z.object({
 export const deleteSkillInput = z.object({
   skillPath: z.string(),
 });
+
+export const exportSkillInput = z.object({
+  skillPath: z.string(),
+});
+
+export const exportedSkillFile = z.object({
+  // Path relative to the skill directory, using "/" separators.
+  path: z.string(),
+  content: z.string(),
+});
+
+// Pinned to the shared ExportedSkill contract so the shapes cannot drift.
+export const exportSkillOutput = z.object({
+  name: z.string(),
+  description: z.string(),
+  body: z.string(),
+  files: z.array(exportedSkillFile),
+  /** Files excluded from the export (binary or oversized). */
+  skipped: z.array(z.string()),
+}) satisfies z.ZodType<SharedExportedSkill & { skipped: string[] }>;
+
+export const installTeamSkillInput = z.object({
+  name: z.string(),
+  description: z.string(),
+  body: z.string(),
+  files: z.array(exportedSkillFile),
+  overwrite: z.boolean().optional(),
+}) satisfies z.ZodType<SharedExportedSkill & { overwrite?: boolean }>;
+
+export type ExportedSkill = z.infer<typeof exportSkillOutput>;
+export type InstallTeamSkillInput = z.infer<typeof installTeamSkillInput>;
 
 export type SkillInfo = z.infer<typeof skillInfo>;
 export type SkillScope = z.infer<typeof skillScope>;
