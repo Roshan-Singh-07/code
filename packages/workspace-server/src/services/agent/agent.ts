@@ -921,10 +921,19 @@ When creating pull requests, add the following footer at the end of the PR descr
         );
         return this.getOrCreateSession(config, isReconnect, true);
       }
+      // When the in-process ACP layer masks a thrown error as a generic
+      // "Internal error", the real text survives in `data.details`. Surface it
+      // here (host-side, before the tRPC boundary drops `data`) so the exported
+      // log names the actual cause.
+      const maskedDetail = (err as { data?: { details?: unknown } })?.data
+        ?.details;
+      const detailSuffix =
+        typeof maskedDetail === "string" && maskedDetail
+          ? `: ${maskedDetail}`
+          : "";
+      const action = isReconnect ? "reconnect" : "create";
       this.log.error(
-        `Failed to ${isReconnect ? "reconnect" : "create"} session${
-          isRetry ? " after retry" : ""
-        }`,
+        `Failed to ${action} session${isRetry ? " after retry" : ""}${detailSuffix}`,
         err,
       );
       // Non-auth reconnect failure on first attempt: fall back to a fresh session.
