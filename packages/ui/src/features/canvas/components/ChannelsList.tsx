@@ -1,20 +1,22 @@
 import {
+  CaretDownIcon,
+  CaretRightIcon,
+  CaretUpIcon,
   CodeIcon,
   DotsThreeIcon,
   FileIcon,
   FileTextIcon,
   FolderIcon,
+  HashIcon,
   PencilSimpleIcon,
   PlusIcon,
+  StarIcon,
   TrashIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import {
   Badge,
   Button,
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
@@ -27,11 +29,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@posthog/quill";
 import type { Task } from "@posthog/shared/domain-types";
 import { CreateChannelModal } from "@posthog/ui/features/canvas/components/CreateChannelModal";
 import { RenameChannelModal } from "@posthog/ui/features/canvas/components/RenameChannelModal";
+import {
+  useChannelStars,
+  useChannelStarToggle,
+} from "@posthog/ui/features/canvas/hooks/useChannelStars";
 import {
   type Channel,
   useChannelMutations,
@@ -47,41 +54,11 @@ import { useTaskPrStatus } from "@posthog/ui/features/sidebar/useTaskPrStatus";
 import { useTasks } from "@posthog/ui/features/tasks/useTasks";
 import { useWorkspace } from "@posthog/ui/features/workspace/useWorkspace";
 import { toast } from "@posthog/ui/primitives/toast";
+import * as Collapsible from "@radix-ui/react-collapsible";
 import { Box, Flex, IconButton, Text, Tooltip } from "@radix-ui/themes";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type ReactNode, useCallback, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { hostClient } from "../hostClient";
-
-// Per-channel collapsed/expanded state, persisted across reloads. Channels are
-// CLOSED by default (absent key reads as closed); only an explicit open is stored.
-const CHANNEL_OPEN_PREFIX = "posthog.canvas.channelOpen.";
-
-function useChannelOpen(channelId: string): [boolean, (open: boolean) => void] {
-  const key = `${CHANNEL_OPEN_PREFIX}${channelId}`;
-  const [open, setOpenState] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(key) === "1";
-    } catch {
-      return false;
-    }
-  });
-  const setOpen = useCallback(
-    (next: boolean) => {
-      setOpenState(next);
-      try {
-        if (next) {
-          localStorage.setItem(key, "1");
-        } else {
-          localStorage.removeItem(key);
-        }
-      } catch {
-        // Ignore storage failures (private mode, quota) — state still works in-session.
-      }
-    },
-    [key],
-  );
-  return [open, setOpen];
-}
 
 function NavButton({
   label,
@@ -122,6 +99,7 @@ function ChannelMenu({ channel }: { channel: Channel }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { deleteChannel, isDeleting } = useChannelMutations();
+  const { isStarred, toggleStar, removeStar } = useChannelStarToggle(channel);
 
   const onDelete = async () => {
     try {
@@ -143,6 +121,7 @@ function ChannelMenu({ channel }: { channel: Channel }) {
       ]);
 
       await deleteChannel(channel.id);
+      removeStar();
       // If we're inside the channel being deleted, fall back to the index.
       if (pathname.startsWith(`/website/${channel.id}`)) {
         void navigate({ to: "/website" });
@@ -180,6 +159,23 @@ function ChannelMenu({ channel }: { channel: Channel }) {
           sideOffset={4}
           className="w-auto min-w-fit"
         >
+          <DropdownMenuItem onClick={() => toggleStar()}>
+            <StarIcon size={14} weight={isStarred ? "fill" : "regular"} />
+            {isStarred ? "Unstar channel" : "Star channel"}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() =>
+              navigate({
+                to: "/website/$channelId/context",
+                params: { channelId: channel.id },
+              })
+            }
+          >
+            <FileTextIcon size={14} />
+            Edit CONTEXT.md
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setRenameOpen(true)}>
             <PencilSimpleIcon size={14} />
             Rename channel
@@ -342,13 +338,40 @@ function ChannelSection({
   const { data: tasks } = useTasks();
   const { tasks: filedTasks } = useChannelTasks(channel.id);
   const base = `/website/${channel.id}`;
-  const [open, setOpen] = useChannelOpen(channel.id);
+  // Channels always start collapsed on load; expansion is session-only.
+  const [open, setOpen] = useState(false);
 
   return (
     <Box className="group/chan relative">
-      <Collapsible variant="folder" open={open} onOpenChange={setOpen}>
-        <CollapsibleTrigger>{channel.name}</CollapsibleTrigger>
-        <CollapsibleContent>
+      <Collapsible.Root open={open} onOpenChange={setOpen}>
+        <Collapsible.Trigger asChild>
+          <Button
+            variant="default"
+            size="sm"
+            // Collapsible.Trigger sets aria-expanded, which the default Button
+            // styles with a persistent highlight. Suppress it — an expanded
+            // channel should only highlight on hover (or via its active child).
+            className="aria-expanded:!bg-transparent hover:aria-expanded:!bg-fill-hover w-full justify-start gap-2 pr-16"
+          >
+            {/* `#` by default; swaps to the expand/collapse caret on hover. */}
+            <span className="flex size-[18px] shrink-0 items-center justify-center text-gray-10">
+              <HashIcon size={14} className="block group-hover/chan:hidden" />
+              {open ? (
+                <CaretDownIcon
+                  size={12}
+                  className="hidden group-hover/chan:block"
+                />
+              ) : (
+                <CaretRightIcon
+                  size={12}
+                  className="hidden group-hover/chan:block"
+                />
+              )}
+            </span>
+            <span className="truncate font-medium">{channel.name}</span>
+          </Button>
+        </Collapsible.Trigger>
+        <Collapsible.Content>
           <Flex direction="column" gap="1" pt="1" pl="3">
             <NavButton
               label="Canvases"
@@ -385,20 +408,9 @@ function ChannelSection({
                 />
               );
             })}
-            <NavButton
-              label="CONTEXT.md"
-              icon={<FileTextIcon size={14} className="text-gray-9" />}
-              active={pathname.startsWith(`${base}/context`)}
-              onClick={() =>
-                navigate({
-                  to: "/website/$channelId/context",
-                  params: { channelId: channel.id },
-                })
-              }
-            />
           </Flex>
-        </CollapsibleContent>
-      </Collapsible>
+        </Collapsible.Content>
+      </Collapsible.Root>
       <Flex gap="1" align="center" className="absolute top-1 right-1">
         <Box className="opacity-0 transition-opacity group-hover/chan:opacity-100">
           <Tooltip content="New task" side="top">
@@ -424,11 +436,72 @@ function ChannelSection({
   );
 }
 
+// A collapsible channel group with a leading icon that swaps to a caret on
+// hover (Slack-style). Sections start expanded; collapse state is session-only.
+function ChannelGroup({
+  label,
+  icon,
+  isEmpty = false,
+  emptyHint,
+  className,
+  children,
+}: {
+  label: string;
+  icon: ReactNode;
+  isEmpty?: boolean;
+  emptyHint?: ReactNode;
+  className?: string;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <Collapsible.Root open={open} onOpenChange={setOpen} className={className}>
+      <Collapsible.Trigger asChild>
+        <button
+          type="button"
+          className="group/grp flex w-full items-center gap-2 px-2 pt-1 text-left"
+        >
+          {/* Leading icon by default; swaps to the expand/collapse caret on hover. */}
+          <span className="flex size-4 shrink-0 items-center justify-center text-gray-9">
+            <span className="block group-hover/grp:hidden">{icon}</span>
+            {open ? (
+              <CaretUpIcon size={12} className="hidden group-hover/grp:block" />
+            ) : (
+              <CaretDownIcon
+                size={12}
+                className="hidden group-hover/grp:block"
+              />
+            )}
+          </span>
+          <Text weight="medium" className="text-gray-9 text-xs tracking-wide">
+            {label}
+          </Text>
+        </button>
+      </Collapsible.Trigger>
+      <Collapsible.Content>
+        <Flex direction="column" gap="1" pt="1" pl="3">
+          {isEmpty ? emptyHint : children}
+        </Flex>
+      </Collapsible.Content>
+    </Collapsible.Root>
+  );
+}
+
 // The channel list — the Channels space sidebar. Channels are server-backed;
-// selecting one opens its dashboards under /website/$channelId.
+// selecting one opens its dashboards under /website/$channelId. Starred
+// channels are user-specific and surface in their own section at the top.
 export function ChannelsList() {
   const { channels, isLoading } = useChannels();
+  const { starredRefToShortcutId } = useChannelStars();
   const [modalOpen, setModalOpen] = useState(false);
+
+  const starredChannels = channels.filter((c) =>
+    starredRefToShortcutId.has(c.path),
+  );
+  const otherChannels = channels.filter(
+    (c) => !starredRefToShortcutId.has(c.path),
+  );
 
   return (
     <Flex direction="column" className="h-full min-h-0">
@@ -443,13 +516,48 @@ export function ChannelsList() {
           </Text>
         )}
 
-        {channels.map((channel) => (
-          <ChannelSection
-            key={channel.id}
-            channel={channel}
-            channels={channels}
-          />
-        ))}
+        {channels.length > 0 && (
+          <>
+            <ChannelGroup
+              label="Starred"
+              icon={<StarIcon size={14} className="text-gray-9" />}
+              isEmpty={starredChannels.length === 0}
+              emptyHint={
+                <Text
+                  as="div"
+                  size="1"
+                  className="mx-1 rounded-md border border-gray-6 border-dashed px-2 py-1.5 text-[11px] text-gray-9 leading-snug"
+                >
+                  Star channels you use often to pin them here.
+                </Text>
+              }
+            >
+              {starredChannels.map((channel) => (
+                <ChannelSection
+                  key={channel.id}
+                  channel={channel}
+                  channels={channels}
+                />
+              ))}
+            </ChannelGroup>
+
+            {otherChannels.length > 0 && (
+              <ChannelGroup
+                label="Channels"
+                icon={<HashIcon size={14} className="text-gray-9" />}
+                className="mt-3"
+              >
+                {otherChannels.map((channel) => (
+                  <ChannelSection
+                    key={channel.id}
+                    channel={channel}
+                    channels={channels}
+                  />
+                ))}
+              </ChannelGroup>
+            )}
+          </>
+        )}
       </Flex>
 
       {/* Pinned to the bottom of the channels nav. */}
