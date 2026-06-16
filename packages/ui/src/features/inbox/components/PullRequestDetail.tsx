@@ -1,5 +1,6 @@
 import {
   ArrowSquareOutIcon,
+  CopyIcon,
   GitPullRequestIcon,
   MagnifyingGlassIcon,
 } from "@phosphor-icons/react";
@@ -13,6 +14,7 @@ import { PrDiffStats } from "@posthog/ui/features/inbox/components/PrDiffStats";
 import { ReportDetailActions } from "@posthog/ui/features/inbox/components/ReportDetailActions";
 import { ReportTasksSection } from "@posthog/ui/features/inbox/components/ReportTasksSection";
 import { SuggestedReviewersSection } from "@posthog/ui/features/inbox/components/SuggestedReviewersSection";
+import { copyInboxReportLink } from "@posthog/ui/features/inbox/utils/copyInboxReportLink";
 import { Text } from "@radix-ui/themes";
 
 interface PullRequestDetailProps {
@@ -72,6 +74,15 @@ function PullRequestDetailContent({ report }: { report: SignalReport }) {
       primaryAction={
         <>
           <ReportDetailActions report={report} />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => copyInboxReportLink(report)}
+            title="Copy a deep link to this report"
+          >
+            <CopyIcon size={12} />
+          </Button>
           {prRef && report.implementation_pr_url ? (
             <Button
               type="button"
