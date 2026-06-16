@@ -17,6 +17,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as WebsiteIndexRouteImport } from './routes/website/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as CodeIndexRouteImport } from './routes/code/index'
+import { Route as WebsiteSkillsRouteImport } from './routes/website/skills'
+import { Route as WebsiteNewRouteImport } from './routes/website/new'
+import { Route as WebsiteMcpServersRouteImport } from './routes/website/mcp-servers'
+import { Route as WebsiteHomeRouteImport } from './routes/website/home'
+import { Route as WebsiteCommandCenterRouteImport } from './routes/website/command-center'
 import { Route as SettingsCategoryRouteImport } from './routes/settings/$category'
 import { Route as FoldersFolderIdRouteImport } from './routes/folders/$folderId'
 import { Route as CodeInboxRouteImport } from './routes/code/inbox'
@@ -85,6 +90,31 @@ const CodeIndexRoute = CodeIndexRouteImport.update({
   id: '/code/',
   path: '/code/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const WebsiteSkillsRoute = WebsiteSkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
+  getParentRoute: () => WebsiteRoute,
+} as any)
+const WebsiteNewRoute = WebsiteNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => WebsiteRoute,
+} as any)
+const WebsiteMcpServersRoute = WebsiteMcpServersRouteImport.update({
+  id: '/mcp-servers',
+  path: '/mcp-servers',
+  getParentRoute: () => WebsiteRoute,
+} as any)
+const WebsiteHomeRoute = WebsiteHomeRouteImport.update({
+  id: '/home',
+  path: '/home',
+  getParentRoute: () => WebsiteRoute,
+} as any)
+const WebsiteCommandCenterRoute = WebsiteCommandCenterRouteImport.update({
+  id: '/command-center',
+  path: '/command-center',
+  getParentRoute: () => WebsiteRoute,
 } as any)
 const SettingsCategoryRoute = SettingsCategoryRouteImport.update({
   id: '/settings/$category',
@@ -244,6 +274,11 @@ export interface FileRoutesByFullPath {
   '/code/inbox': typeof CodeInboxRouteWithChildren
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
+  '/website/command-center': typeof WebsiteCommandCenterRoute
+  '/website/home': typeof WebsiteHomeRoute
+  '/website/mcp-servers': typeof WebsiteMcpServersRoute
+  '/website/new': typeof WebsiteNewRoute
+  '/website/skills': typeof WebsiteSkillsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
@@ -279,6 +314,11 @@ export interface FileRoutesByTo {
   '/code/home': typeof CodeHomeRoute
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
+  '/website/command-center': typeof WebsiteCommandCenterRoute
+  '/website/home': typeof WebsiteHomeRoute
+  '/website/mcp-servers': typeof WebsiteMcpServersRoute
+  '/website/new': typeof WebsiteNewRoute
+  '/website/skills': typeof WebsiteSkillsRoute
   '/code': typeof CodeIndexRoute
   '/settings': typeof SettingsIndexRoute
   '/website': typeof WebsiteIndexRoute
@@ -314,6 +354,11 @@ export interface FileRoutesById {
   '/code/inbox': typeof CodeInboxRouteWithChildren
   '/folders/$folderId': typeof FoldersFolderIdRoute
   '/settings/$category': typeof SettingsCategoryRoute
+  '/website/command-center': typeof WebsiteCommandCenterRoute
+  '/website/home': typeof WebsiteHomeRoute
+  '/website/mcp-servers': typeof WebsiteMcpServersRoute
+  '/website/new': typeof WebsiteNewRoute
+  '/website/skills': typeof WebsiteSkillsRoute
   '/code/': typeof CodeIndexRoute
   '/settings/': typeof SettingsIndexRoute
   '/website/': typeof WebsiteIndexRoute
@@ -354,6 +399,11 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
+    | '/website/command-center'
+    | '/website/home'
+    | '/website/mcp-servers'
+    | '/website/new'
+    | '/website/skills'
     | '/code/'
     | '/settings/'
     | '/website/'
@@ -389,6 +439,11 @@ export interface FileRouteTypes {
     | '/code/home'
     | '/folders/$folderId'
     | '/settings/$category'
+    | '/website/command-center'
+    | '/website/home'
+    | '/website/mcp-servers'
+    | '/website/new'
+    | '/website/skills'
     | '/code'
     | '/settings'
     | '/website'
@@ -423,6 +478,11 @@ export interface FileRouteTypes {
     | '/code/inbox'
     | '/folders/$folderId'
     | '/settings/$category'
+    | '/website/command-center'
+    | '/website/home'
+    | '/website/mcp-servers'
+    | '/website/new'
+    | '/website/skills'
     | '/code/'
     | '/settings/'
     | '/website/'
@@ -525,6 +585,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/code/'
       preLoaderRoute: typeof CodeIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/website/skills': {
+      id: '/website/skills'
+      path: '/skills'
+      fullPath: '/website/skills'
+      preLoaderRoute: typeof WebsiteSkillsRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/new': {
+      id: '/website/new'
+      path: '/new'
+      fullPath: '/website/new'
+      preLoaderRoute: typeof WebsiteNewRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/mcp-servers': {
+      id: '/website/mcp-servers'
+      path: '/mcp-servers'
+      fullPath: '/website/mcp-servers'
+      preLoaderRoute: typeof WebsiteMcpServersRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/home': {
+      id: '/website/home'
+      path: '/home'
+      fullPath: '/website/home'
+      preLoaderRoute: typeof WebsiteHomeRouteImport
+      parentRoute: typeof WebsiteRoute
+    }
+    '/website/command-center': {
+      id: '/website/command-center'
+      path: '/command-center'
+      fullPath: '/website/command-center'
+      preLoaderRoute: typeof WebsiteCommandCenterRouteImport
+      parentRoute: typeof WebsiteRoute
     }
     '/settings/$category': {
       id: '/settings/$category'
@@ -726,6 +821,11 @@ declare module '@tanstack/react-router' {
 }
 
 interface WebsiteRouteChildren {
+  WebsiteCommandCenterRoute: typeof WebsiteCommandCenterRoute
+  WebsiteHomeRoute: typeof WebsiteHomeRoute
+  WebsiteMcpServersRoute: typeof WebsiteMcpServersRoute
+  WebsiteNewRoute: typeof WebsiteNewRoute
+  WebsiteSkillsRoute: typeof WebsiteSkillsRoute
   WebsiteIndexRoute: typeof WebsiteIndexRoute
   WebsiteChannelIdContextRoute: typeof WebsiteChannelIdContextRoute
   WebsiteChannelIdNewRoute: typeof WebsiteChannelIdNewRoute
@@ -735,6 +835,11 @@ interface WebsiteRouteChildren {
 }
 
 const WebsiteRouteChildren: WebsiteRouteChildren = {
+  WebsiteCommandCenterRoute: WebsiteCommandCenterRoute,
+  WebsiteHomeRoute: WebsiteHomeRoute,
+  WebsiteMcpServersRoute: WebsiteMcpServersRoute,
+  WebsiteNewRoute: WebsiteNewRoute,
+  WebsiteSkillsRoute: WebsiteSkillsRoute,
   WebsiteIndexRoute: WebsiteIndexRoute,
   WebsiteChannelIdContextRoute: WebsiteChannelIdContextRoute,
   WebsiteChannelIdNewRoute: WebsiteChannelIdNewRoute,

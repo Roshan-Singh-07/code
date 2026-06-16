@@ -49,9 +49,16 @@ function deriveFromMatches(matches: Match[]): AppView {
     }
     case "/code/tasks/pending/$key":
       return { type: "task-pending", pendingTaskKey: last.params.key };
+    // Channels-space new-task screen — same task-input view (and prefill merge
+    // below) as the /code/ index, so the New task item highlights identically.
+    case "/website/new":
+      return { type: "task-input" };
     case "/folders/$folderId":
       return { type: "folder-settings", folderId: last.params.folderId };
     case "/code/home":
+    // Channels-space mirrors share the same view type so the sidebar's
+    // active-state highlighting works identically in either space.
+    case "/website/home":
       return { type: "home" };
     case "/code/inbox":
       return { type: "inbox" };
@@ -60,10 +67,13 @@ function deriveFromMatches(matches: Match[]): AppView {
     case "/code/archived":
       return { type: "archived" };
     case "/command-center":
+    case "/website/command-center":
       return { type: "command-center" };
     case "/skills":
+    case "/website/skills":
       return { type: "skills" };
     case "/mcp-servers":
+    case "/website/mcp-servers":
       return { type: "mcp-servers" };
     case "/settings/$category":
     case "/settings/":
