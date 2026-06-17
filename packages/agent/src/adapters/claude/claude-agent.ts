@@ -42,6 +42,7 @@ import {
   type SDKUserMessage,
   type SlashCommand,
 } from "@anthropic-ai/claude-agent-sdk";
+import { serializeError } from "@posthog/shared";
 import { v7 as uuidv7 } from "uuid";
 import packageJson from "../../../package.json" with { type: "json" };
 import {
@@ -1126,7 +1127,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         this.session.settingsManager.dispose();
         this.session.input.end();
         throw RequestError.internalError(
-          undefined,
+          { details: msg },
           "The Claude Agent process exited unexpectedly. Please start a new session.",
         );
       }
@@ -1816,7 +1817,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
             sessionId,
             taskId,
             taskRunId: meta?.taskRunId,
-            error: err instanceof Error ? err.message : String(err),
+            errorDetail: serializeError(err),
           },
         );
         throw err;
@@ -1825,6 +1826,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
 
     // Kick off SDK initialization for new sessions so it runs concurrently
     // with the model config fetch below (the gateway REST call is independent).
+    const initStartedAt = Date.now();
     const initPromise = !isResume
       ? withTimeout(q.initializationResult(), SESSION_VALIDATION_TIMEOUT_MS)
       : undefined;
@@ -1843,6 +1845,7 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           ]
         : []),
     ]);
+    const modelConfigMs = Date.now() - initStartedAt;
 
     // Restrict the model list to the user's `availableModels` allowlist
     // from settings.json so config UI and downstream resolution stay
@@ -1867,6 +1870,13 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         session.knownSlashCommands = collectKnownSlashCommands(
           initResult.value.commands,
         );
+        this.logger.info("Session initialized", {
+          sessionId,
+          taskId,
+          taskRunId: meta?.taskRunId,
+          modelConfigMs,
+          initMs: Date.now() - initStartedAt,
+        });
       } catch (err) {
         settingsManager.dispose();
         this.terminateQuery(q, abortController);
@@ -1874,7 +1884,9 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
           sessionId,
           taskId,
           taskRunId: meta?.taskRunId,
-          error: err instanceof Error ? err.message : String(err),
+          modelConfigMs,
+          initMs: Date.now() - initStartedAt,
+          errorDetail: serializeError(err),
         });
         throw err;
       }
