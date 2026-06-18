@@ -1491,6 +1491,14 @@ export class ClaudeAcpAgent extends BaseAcpAgent {
         : o,
     );
 
+    await this.client.sessionUpdate({
+      sessionId: this.sessionId,
+      update: {
+        sessionUpdate: "config_option_update",
+        configOptions: this.session.configOptions,
+      },
+    });
+
     return { configOptions: this.session.configOptions };
   }
 
