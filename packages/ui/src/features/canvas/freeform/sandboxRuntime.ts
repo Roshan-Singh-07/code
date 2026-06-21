@@ -3,6 +3,7 @@ import {
   FREEFORM_BABEL_URL,
   FREEFORM_ESM_HOST,
   FREEFORM_POSTHOG_JS_URL,
+  FREEFORM_QUILL_CSS_URLS,
 } from "@posthog/core/canvas/freeformWhitelist";
 
 // Builds the HTML document loaded into the freeform-canvas sandbox iframe.
@@ -29,6 +30,67 @@ export function buildSandboxDocument(
   const importMap = JSON.stringify(buildImportMap());
   const csp = contentSecurityPolicy(mode, analyticsApiHost);
 
+  // Quill components emit Tailwind utility classes (layout — `inline-flex`,
+  // `items-center` — AND token colors like `bg-card`, `text-muted-foreground`)
+  // ALONGSIDE their `.quill-*` BEM classes. The linked Quill stylesheets style
+  // the BEM half; the utilities are dead without Tailwind, so components mislay
+  // out. The sandbox has no build step, so in EDIT mode we load the Tailwind Play
+  // CDN (JIT-in-browser; a MutationObserver picks up classes as the app mounts)
+  // and map Quill's semantic color tokens to the CSS variables tokens.css defines.
+  // View/published mode forbids the CDN (locked egress) — that tier must self-host
+  // a compiled stylesheet (Phase 2).
+  const tailwind =
+    mode === "edit"
+      ? `<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+  // Preflight OFF: its UNLAYERED form reset (e.g. \`button{background-color:transparent}\`)
+  // beats Quill's component styles, which live in \`@layer components\` — unlayered always
+  // wins over layered. That stripped Quill buttons (e.g. the Select trigger) of their
+  // border/background while box-shadow-bordered Cards survived. Quill self-styles and we
+  // ship our own minimal reset, so Preflight isn't needed; utilities still generate.
+  // The FULL Quill color/fill token map (mirrors the @theme inline block in
+  // quill/tokens.css). Pure-utility components like DateTimePicker have NO BEM
+  // fallback in primitives.css — they rely entirely on these utilities (e.g. the
+  // calendar's \`bg-fill-hover\`, \`bg-fill-selected\`), so every token Quill maps
+  // must be here or the component renders half-styled.
+  corePlugins: { preflight: false },
+  plugins: [
+    // Quill authors for Tailwind v4; \`not-disabled:\` is a v4 variant the Play
+    // CDN (v3) lacks. The calendar uses \`not-disabled:hover:bg-fill-hover\`, so
+    // register it (composes with \`hover:\`) or those day-cell styles never generate.
+    tailwind.plugin(({ addVariant }) => {
+      addVariant("not-disabled", "&:not(:disabled)");
+    }),
+  ],
+  theme: { extend: {
+    colors: {
+      border: "var(--border)", input: "var(--input)", ring: "var(--ring)",
+      background: "var(--background)", foreground: "var(--foreground)",
+      chrome: "var(--chrome)",
+      primary: { DEFAULT: "var(--primary)", foreground: "var(--primary-foreground)" },
+      secondary: { DEFAULT: "var(--secondary)", foreground: "var(--secondary-foreground)" },
+      destructive: { DEFAULT: "var(--destructive)", foreground: "var(--destructive-foreground)" },
+      muted: { DEFAULT: "var(--muted)", foreground: "var(--muted-foreground)" },
+      accent: { DEFAULT: "var(--accent)", foreground: "var(--accent-foreground)" },
+      popover: { DEFAULT: "var(--popover)", foreground: "var(--popover-foreground)" },
+      card: { DEFAULT: "var(--card)", foreground: "var(--card-foreground)" },
+      success: { DEFAULT: "var(--success)", foreground: "var(--success-foreground)" },
+      warning: { DEFAULT: "var(--warning)", foreground: "var(--warning-foreground)" },
+      info: { DEFAULT: "var(--info)", foreground: "var(--info-foreground)" },
+      // Surface fills the calendar (and other stateful primitives) use for
+      // hover / selected / expanded backgrounds.
+      fill: {
+        hover: "var(--fill-hover)",
+        selected: "var(--fill-selected)",
+        expanded: "var(--fill-expanded)",
+      },
+    },
+    borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
+  } } };
+</script>`
+      : "";
+
   // The bootstrap module. It is static (no user input) so it can be inlined
   // safely. It waits for `init`, transpiles the canvas with Babel, runs it from
   // a Blob module (which resolves bare imports via the import map above), and
@@ -54,8 +116,16 @@ export function buildSandboxDocument(
     window.ph = {
       // Run a named, server-stored query (the only shape allowed in view mode).
       run: (name, params) => call("run", { name, params: params ?? {} }),
-      // Inline HogQL — edit mode only; rejected by the host in view mode.
-      query: (hogql, params) => call("query", { hogql, params: params ?? {} }),
+      // Run a query. Pass a TYPED query node (\`{ kind: "TrendsQuery", … }\`) for
+      // UI-matching numbers (preferred), or an inline HogQL string (escape hatch).
+      // Edit mode only; rejected by the host in view mode.
+      query: (queryOrHogql, params) =>
+        call(
+          "query",
+          typeof queryOrHogql === "string"
+            ? { hogql: queryOrHogql, params: params ?? {} }
+            : { query: queryOrHogql, params: params ?? {} },
+        ),
       // Send an analytics event. Prefer in-iframe posthog-js (so it shares the
       // session/replay); otherwise host-mediated (no replay, still captured).
       capture: (event, properties, distinctId) => {
@@ -206,6 +276,10 @@ export function buildSandboxDocument(
 <meta charset="utf-8" />
 <meta http-equiv="Content-Security-Policy" content="${csp}" />
 <script type="importmap">${importMap}</script>
+${tailwind}
+${FREEFORM_QUILL_CSS_URLS.map(
+  (href) => `<link rel="stylesheet" href="${href}" />`,
+).join("\n")}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -241,8 +315,10 @@ function contentSecurityPolicy(
     return [
       "default-src 'none'",
       // Inline bootstrap + esm.sh modules + the transpiled Blob module + the
-      // posthog-js recorder script.
-      `script-src 'unsafe-inline' blob: ${esm} ${ph}`,
+      // posthog-js recorder script + the Tailwind Play CDN (which JIT-compiles
+      // in-browser, so it needs 'unsafe-eval'). The CDN is edit-mode ONLY — view
+      // mode keeps egress locked and self-hosts styles instead.
+      `script-src 'unsafe-inline' 'unsafe-eval' blob: https://cdn.tailwindcss.com ${esm} ${ph}`,
       `style-src 'unsafe-inline' ${esm}`,
       `font-src data: ${esm}`,
       "img-src data: blob: https:",
