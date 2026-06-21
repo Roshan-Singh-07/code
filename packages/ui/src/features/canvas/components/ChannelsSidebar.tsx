@@ -13,6 +13,7 @@ import { useFeatureFlag } from "@posthog/ui/features/feature-flags/useFeatureFla
 import { openSettings } from "@posthog/ui/features/settings/hooks/useOpenSettings";
 import { ProjectSwitcher } from "@posthog/ui/features/sidebar/components/ProjectSwitcher";
 import { SidebarItem } from "@posthog/ui/features/sidebar/components/SidebarItem";
+import { UpdateBanner } from "@posthog/ui/features/sidebar/components/UpdateBanner";
 import {
   navigateToAgents,
   navigateToCanvas,
@@ -151,6 +152,8 @@ export function ChannelsSidebar() {
         <ChannelsNav />
         <ChannelsList />
       </Box>
+
+      <UpdateBanner />
 
       {/* Settings pinned to the bottom. Settings is a full-page route, so this
           leaves the Channels space rather than highlighting in place. */}
