@@ -13,14 +13,15 @@ export const INBOX_PIPELINE_STATUS_FILTER =
   "potential,candidate,in_progress,ready,pending_input,failed";
 
 /**
- * Status filter for the Archive tab. `suppressed` is the only archived status:
- * it is the single state the archive action sets, and the only not-in-inbox
- * state worth restoring. `deleted` is permanent and stripped server-side; snooze
- * is a temporary `snoozed_until` timestamp, not a status, and auto-returns. See
- * `isDismissedReport` for the full rationale. Suppressed reports are excluded
- * from the main pipeline query, so the Archive tab fetches them explicitly.
+ * Status filter for the Archive tab — the two terminal, not-in-inbox states:
+ * `suppressed` (the user archived it; restorable) and `resolved` (its
+ * implementation PR merged; terminal, shown for reference only). `deleted` is
+ * permanent and stripped server-side; snooze is a temporary `snoozed_until`
+ * timestamp, not a status, and auto-returns. See `isDismissedReport` for the
+ * full rationale. Both states are excluded from the main pipeline query, so the
+ * Archive tab fetches them explicitly.
  */
-export const INBOX_DISMISSED_STATUS_FILTER = "suppressed";
+export const INBOX_DISMISSED_STATUS_FILTER = "suppressed,resolved";
 
 /**
  * Status filter for the Pull requests tab's list and count. Only `ready` PRs —
@@ -82,6 +83,21 @@ export function buildSignalReportListOrdering(
   const fieldKey = direction === "desc" ? `-${field}` : field;
   const tiebreak = field === "priority" ? "-created_at" : "priority";
   return ["status", fieldKey, tiebreak].join(",");
+}
+
+/**
+ * Ordering for the Archive tab, which lists two terminal statuses
+ * (`suppressed` + `resolved`). Unlike the pipeline ordering above, it must NOT
+ * prefix with `status`: that would group one terminal state ahead of the other
+ * before applying the time sort, burying recent completions behind older items
+ * from the sibling status. Sort purely by the selected field so the list is
+ * globally newest-changed-first across both states.
+ */
+export function buildArchiveListOrdering(
+  field: SignalReportOrderingField,
+  direction: "asc" | "desc",
+): string {
+  return direction === "desc" ? `-${field}` : field;
 }
 
 export function buildSuggestedReviewerFilterParam(
