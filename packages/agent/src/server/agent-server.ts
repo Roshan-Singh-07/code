@@ -961,10 +961,19 @@ export class AgentServer {
       "slack_thread_url",
     );
 
+    // Web backlink to the inbox report that spawned this task, so the
+    // auto-generated PR can point back at it. Built from the same pieces as the
+    // report's `_posthogUrl`: <apiUrl>/project/<projectId>/inbox/<reportId>.
+    const signalReportId = preTask?.signal_report;
+    const inboxReportUrl = signalReportId
+      ? `${this.config.apiUrl.replace(/\/$/, "")}/project/${this.config.projectId}/inbox/${signalReportId}`
+      : null;
+
     const runtimeAdapter = this.getRuntimeAdapter();
     const sessionSystemPrompt = this.buildSessionSystemPrompt(
       prUrl,
       slackThreadUrl,
+      inboxReportUrl,
     );
     const codexInstructions =
       runtimeAdapter === "codex"
@@ -1640,8 +1649,13 @@ export class AgentServer {
   private buildSessionSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string | { append: string } {
-    const cloudAppend = this.buildCloudSystemPrompt(prUrl, slackThreadUrl);
+    const cloudAppend = this.buildCloudSystemPrompt(
+      prUrl,
+      slackThreadUrl,
+      inboxReportUrl,
+    );
     const userPrompt = this.config.claudeCode?.systemPrompt;
 
     // String override: combine user prompt with cloud instructions
@@ -1703,16 +1717,22 @@ export class AgentServer {
   }
 
   /**
+   * Automated, PostHog-branded origins: the Slack app and the Self-driving
+   * inbox. These both auto-publish by default and attribute their PRs to
+   * "PostHog" rather than the PostHog Code desktop app.
+   */
+  private isAutomatedOrigin(): boolean {
+    const origin = this.getCloudInteractionOrigin();
+    return origin === "slack" || origin === "signal_report";
+  }
+
+  /**
    * Automated-origin cloud runs auto-publish by default. Every other origin is
    * review-first unless the user explicitly asks, and createPr=false always
    * disables publishing.
    */
   private shouldAutoPublishCloudChanges(): boolean {
-    const origin = this.getCloudInteractionOrigin();
-    return (
-      (origin === "slack" || origin === "signal_report") &&
-      this.config.createPr !== false
-    );
+    return this.isAutomatedOrigin() && this.config.createPr !== false;
   }
 
   private buildDetectedPrContext(prUrl: string): string {
@@ -1737,6 +1757,7 @@ export class AgentServer {
   private buildCloudSystemPrompt(
     prUrl?: string | null,
     slackThreadUrl?: string | null,
+    inboxReportUrl?: string | null,
   ): string {
     const taskId = this.config.taskId;
     const shouldAutoCreatePr = this.shouldAutoPublishCloudChanges();
@@ -1809,9 +1830,17 @@ we want:
   Task-Id: ${taskId}`;
 
     const whyContextInstruction = `   - Add a brief **Why** to the body — one or two sentences capturing the reason the user asked for this change (the motivation, not a restatement of the diff). Keep it short.`;
+    // Slack- and inbox-originated PRs are attributed to PostHog, not the
+    // PostHog Code desktop app — they come from the Slack app / Self-driving
+    // inbox, which users know as "PostHog".
+    const createdWith = this.isAutomatedOrigin()
+      ? "Created with [PostHog](https://posthog.com?ref=pr)"
+      : "Created with [PostHog Code](https://posthog.com/code?ref=pr)";
     const prFooter = slackThreadUrl
-      ? `*Created with [PostHog Code](https://posthog.com/code?ref=pr) from a [Slack thread](${slackThreadUrl})*`
-      : `*Created with [PostHog Code](https://posthog.com/code?ref=pr)*`;
+      ? `*${createdWith} from a [Slack thread](${slackThreadUrl})*`
+      : inboxReportUrl
+        ? `*${createdWith} from an [inbox report](${inboxReportUrl})*`
+        : `*${createdWith}*`;
 
     if (prUrl) {
       if (!shouldAutoCreatePr) {
