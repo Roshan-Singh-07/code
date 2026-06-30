@@ -1,10 +1,14 @@
-"use strict";
+import { createRequire } from "node:module";
+import type { Configuration } from "electron-builder";
+import { asarUnpackGlobs, packagedFileGlobs } from "./runtime-dependencies";
+import beforePack from "./scripts/before-pack";
+
+const require = createRequire(import.meta.url);
 
 const skipNotarize =
   process.env.SKIP_NOTARIZE === "1" || !process.env.APPLE_TEAM_ID;
 
-/** @type {import('electron-builder').Configuration} */
-module.exports = {
+const config: Configuration = {
   // Original release bundle id; changing it breaks existing installs' data dir and Keychain entries.
   appId: "com.posthog.array",
   productName: "PostHog Code",
@@ -20,31 +24,22 @@ module.exports = {
   nodeGypRebuild: false,
   generateUpdatesFilesForAllChannels: true,
 
-  beforePack: "./scripts/before-pack.cjs",
+  // English-only product: drop the ~50 other Electron locales (~50 MB).
+  electronLanguages: ["en", "en-US"],
+
+  beforePack,
 
   files: [
     ".vite/build/**/*",
     ".vite/renderer/**/*",
     "package.json",
     "!node_modules/**/*",
-    "node_modules/node-pty/**/*",
-    "node_modules/node-addon-api/**/*",
-    "node_modules/@parcel/**/*",
-    "node_modules/better-sqlite3/**/*",
-    "node_modules/bindings/**/*",
-    "node_modules/file-uri-to-path/**/*",
-    "node_modules/file-icon/**/*",
-    "node_modules/p-map/**/*",
-    "node_modules/prebuild-install/**/*",
-    "node_modules/micromatch/**/*",
-    "node_modules/is-glob/**/*",
-    "node_modules/detect-libc/**/*",
-    "node_modules/braces/**/*",
-    "node_modules/picomatch/**/*",
-    "node_modules/is-extglob/**/*",
-    "node_modules/fill-range/**/*",
-    "node_modules/to-regex-range/**/*",
-    "node_modules/is-number/**/*",
+    ...packagedFileGlobs,
+    // Sourcemaps are uploaded to PostHog at build time, not consumed in the app.
+    "!**/*.map",
+    // better-sqlite3 ships its C amalgamation sources; only the built .node runs.
+    "!node_modules/better-sqlite3/deps/**",
+    "!node_modules/better-sqlite3/src/**",
   ],
 
   asarUnpack: [
@@ -54,12 +49,7 @@ module.exports = {
     ".vite/build/plugins/posthog/**",
     ".vite/build/codex-acp/**",
     ".vite/build/grammars/**",
-    "node_modules/node-pty/**",
-    "node_modules/@parcel/**",
-    "node_modules/file-icon/**",
-    "node_modules/better-sqlite3/**",
-    "node_modules/bindings/**",
-    "node_modules/file-uri-to-path/**",
+    ...asarUnpackGlobs,
   ],
 
   extraResources: [
@@ -87,7 +77,7 @@ module.exports = {
     extendInfo: {
       CFBundleIconName: "Icon",
     },
-    notarize: skipNotarize ? false : { teamId: process.env.APPLE_TEAM_ID },
+    notarize: !skipNotarize,
   },
 
   dmg: {
@@ -107,7 +97,9 @@ module.exports = {
     target: ["nsis", "squirrel"],
     // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder interpolation tokens, not JS template literals
     artifactName: "PostHog-Code-${version}-${arch}-win.${ext}",
-    icon: "build/app-icon.ico",
+    // electron-builder generates the multi-size .ico from this 1024px PNG; a real
+    // .ico must be >=256px and the committed app-icon.ico is only 32px.
+    icon: "build/app-icon.png",
   },
 
   nsis: {
@@ -117,10 +109,15 @@ module.exports = {
 
   squirrelWindows: {
     name: "PostHogCode",
+    // Squirrel.Windows requires a URL for the install/shortcut icon.
+    iconUrl:
+      "https://raw.githubusercontent.com/PostHog/code/main/apps/code/build/app-icon.ico",
   },
 
   linux: {
     target: ["AppImage", "deb", "rpm"],
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: electron-builder interpolation tokens, not JS template literals
+    artifactName: "PostHog-Code-${version}-${arch}-linux.${ext}",
     icon: "build/app-icon.png",
     category: "Development",
     mimeTypes: ["x-scheme-handler/posthog-code"],
@@ -143,3 +140,5 @@ module.exports = {
     releaseType: "draft",
   },
 };
+
+export default config;

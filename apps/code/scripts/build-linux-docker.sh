@@ -93,11 +93,11 @@ COPYFILE_DISABLE=1 tar -cf - \
       pnpm --filter @posthog/enricher build
       pnpm --filter @posthog/agent build
       cd apps/code
-      node scripts/build.mjs
+      pnpm exec electron-vite build
       if [ -n "${MAKE_TARGETS:-}" ]; then
-        pnpm exec electron-builder build --linux $MAKE_TARGETS --${ARCH} --config electron-builder.config.cjs
+        pnpm exec electron-builder build --linux $MAKE_TARGETS --${ARCH} --config electron-builder.ts
       else
-        pnpm exec electron-builder build --linux --${ARCH} --config electron-builder.config.cjs
+        pnpm exec electron-builder build --linux --${ARCH} --config electron-builder.ts
       fi
       mkdir -p /out
       cp -r out/. /out/
