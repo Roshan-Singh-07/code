@@ -77,6 +77,7 @@ import {
   promptReferencesAbsoluteFolder,
   shellExecutesToContextBlocks,
 } from "./sessionEvents";
+import { selectSessionsToEvict } from "./sessionEviction";
 import { createBaseSession } from "./sessionFactory";
 import { type ParsedSessionLogs, parseSessionLogContent } from "./sessionLogs";
 
@@ -513,6 +514,8 @@ export class SessionService {
   >();
   private localRepoPaths = new Map<string, string>();
   private localRecoveryAttempts = new Map<string, Promise<boolean>>();
+  private sessionLastUsedAt = new Map<string, number>();
+  private mountedTaskCounts = new Map<string, number>();
   /** Re-entrance guard for cloud queue dispatch (per taskId). */
   private dispatchingCloudQueues = new Set<string>();
   /** Coalesces deferred cloud queue flush timers (per taskId). */
@@ -610,6 +613,8 @@ export class SessionService {
     const { task } = params;
     const taskId = task.id;
     this.localRepoPaths.set(taskId, params.repoPath);
+    this.sessionLastUsedAt.set(taskId, Date.now());
+    void this.evictIdleSessions(taskId);
 
     // Return existing connection promise if already connecting
     const existingPromise = this.connectingTasks.get(taskId);
@@ -1029,7 +1034,10 @@ export class SessionService {
     }
   }
 
-  private async teardownSession(taskRunId: string): Promise<void> {
+  private async teardownSession(
+    taskRunId: string,
+    opts?: { preserveResumeState?: boolean },
+  ): Promise<void> {
     const session = this.getSessionByRunId(taskRunId);
 
     try {
@@ -1053,9 +1061,14 @@ export class SessionService {
     if (session) {
       this.localRepoPaths.delete(session.taskId);
       this.localRecoveryAttempts.delete(session.taskId);
+      this.sessionLastUsedAt.delete(session.taskId);
     }
-    this.d.adapterStore.removeAdapter(taskRunId);
-    this.d.removePersistedConfigOptions(taskRunId);
+    if (!opts?.preserveResumeState) {
+      // Reconnect restores the model and permission mode from these; only a
+      // permanent disconnect (archive, delete, fresh session) may drop them.
+      this.d.adapterStore.removeAdapter(taskRunId);
+      this.d.removePersistedConfigOptions(taskRunId);
+    }
   }
 
   /**
@@ -1358,6 +1371,51 @@ export class SessionService {
     await this.teardownSession(session.taskRunId);
   }
 
+  registerMountedTask(taskId: string): () => void {
+    this.mountedTaskCounts.set(
+      taskId,
+      (this.mountedTaskCounts.get(taskId) ?? 0) + 1,
+    );
+    this.sessionLastUsedAt.set(taskId, Date.now());
+    return () => {
+      const count = this.mountedTaskCounts.get(taskId) ?? 0;
+      if (count <= 1) {
+        this.mountedTaskCounts.delete(taskId);
+      } else {
+        this.mountedTaskCounts.set(taskId, count - 1);
+      }
+      this.sessionLastUsedAt.set(taskId, Date.now());
+    };
+  }
+
+  private async evictIdleSessions(activeTaskId: string): Promise<void> {
+    const toEvict = selectSessionsToEvict({
+      sessions: Object.values(this.d.store.getSessions()),
+      activeTaskId,
+      protectedTaskIds: new Set(this.mountedTaskCounts.keys()),
+      lastUsedAt: (session) =>
+        this.sessionLastUsedAt.get(session.taskId) ?? session.startedAt,
+    });
+
+    for (const session of toEvict) {
+      this.d.log.info("Evicting idle session to bound memory", {
+        taskId: session.taskId,
+        taskRunId: session.taskRunId,
+      });
+      this.sessionLastUsedAt.delete(session.taskId);
+      try {
+        await this.teardownSession(session.taskRunId, {
+          preserveResumeState: true,
+        });
+      } catch (error) {
+        this.d.log.error("Failed to evict idle session", {
+          taskId: session.taskId,
+          error,
+        });
+      }
+    }
+  }
+
   // --- Subscription Management ---
 
   /** Streamed events awaiting their frame flush, keyed by taskRunId. Order
@@ -1598,6 +1656,7 @@ export class SessionService {
     this.connectingTasks.clear();
     this.localRepoPaths.clear();
     this.localRecoveryAttempts.clear();
+    this.sessionLastUsedAt.clear();
     this.cloudPermissionRequestIds.clear();
     this.liveTurnContent.clear();
     this.cloudLogGapReconciler.clear();
@@ -4285,6 +4344,10 @@ export class SessionService {
     } = params;
 
     if (isCloud) {
+      // Local connects bound the session budget inside connectToTask; cloud
+      // watches would otherwise never trigger eviction.
+      this.sessionLastUsedAt.set(task.id, Date.now());
+      void this.evictIdleSessions(task.id);
       return this.reconcileCloudConnection(
         task,
         cloudAuth,
