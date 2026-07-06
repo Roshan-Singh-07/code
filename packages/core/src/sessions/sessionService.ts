@@ -1802,6 +1802,9 @@ export class SessionService {
         // above. Cloud sessions never see that response.
         const session = this.getSessionByRunId(taskRunId);
         if (session?.isCloud) {
+          const turnStartedAtTs =
+            this.liveTurnContent.get(taskRunId)?.startedAtTs ??
+            session.promptStartedAt;
           this.d.store.updateSession(taskRunId, {
             isPromptPending: false,
             promptStartedAt: null,
@@ -1814,9 +1817,7 @@ export class SessionService {
                 session.taskTitle,
                 "end_turn",
                 session.taskId,
-                session.promptStartedAt
-                  ? acpMsg.ts - session.promptStartedAt
-                  : undefined,
+                turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
               );
             }
             this.d.taskViewedApi.markActivity(session.taskId);
@@ -1907,6 +1908,9 @@ export class SessionService {
     } else {
       this.d.store.appendEvents(taskRunId, [acpMsg]);
     }
+    const turnStartedAtTs =
+      this.liveTurnContent.get(taskRunId)?.startedAtTs ??
+      session.promptStartedAt;
     this.updatePromptStateFromEvents(taskRunId, [acpMsg], { isLive: true });
 
     const msg = acpMsg.message;
@@ -1938,9 +1942,7 @@ export class SessionService {
           session.taskTitle,
           stopReason,
           session.taskId,
-          session.promptStartedAt
-            ? acpMsg.ts - session.promptStartedAt
-            : undefined,
+          turnStartedAtTs ? acpMsg.ts - turnStartedAtTs : undefined,
         );
       }
 
