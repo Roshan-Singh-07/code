@@ -37,6 +37,12 @@ export interface UserBasic {
   is_email_verified?: boolean | null;
 }
 
+/** One row from the org members list; trimmed to what mention pickers need. */
+export interface OrganizationMemberBasic {
+  id: string;
+  user: UserBasic;
+}
+
 export interface Task {
   id: string;
   task_number: number | null;
@@ -85,6 +91,22 @@ export interface TaskThreadMessage {
   author?: UserBasic | null;
   forwarded_to_agent_at?: string | null;
   forwarded_by?: UserBasic | null;
+}
+
+/**
+ * One @-mention of the current user in a task's thread, from the backend
+ * mentions index (`/task_mentions/`). Mirrors `TaskMentionDTO`.
+ */
+export interface TaskMention {
+  id: string;
+  message_id: string;
+  task_id: string;
+  task_title: string;
+  channel_id?: string | null;
+  channel_name?: string | null;
+  author?: UserBasic | null;
+  content: string;
+  created_at: string;
 }
 
 export type TaskRunStatus =
