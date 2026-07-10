@@ -105,7 +105,7 @@ export function ModeSelector({
       label: "Autoresearch",
       ...autoresearch,
       icon: <ChartLineUp size={12} />,
-      className: "text-violet-11",
+      className: "text-muted-foreground",
     });
   }
 
