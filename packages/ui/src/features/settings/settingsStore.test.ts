@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type CompletionSound,
   DEFAULT_WORKSPACE_MODE,
+  getEffectiveCustomInstructions,
   useSettingsStore,
 } from "./settingsStore";
 
@@ -290,6 +291,50 @@ describe("feature settingsStore custom sounds", () => {
       );
     },
   );
+});
+
+describe("getEffectiveCustomInstructions", () => {
+  const synced = {
+    path: "/home/u/.claude/CLAUDE.md",
+    displayPath: "~/.claude/CLAUDE.md",
+    content: "from file",
+    truncated: false,
+  };
+
+  it.each([
+    {
+      label: "typed instructions when sync is off",
+      sync: false,
+      syncedValue: synced,
+      expected: "typed",
+    },
+    {
+      label: "file content when sync is on and a file was found",
+      sync: true,
+      syncedValue: synced,
+      expected: "from file",
+    },
+    {
+      label: "nothing when sync is on but no file was found",
+      sync: true,
+      syncedValue: null,
+      expected: "",
+    },
+    {
+      label: "nothing when the synced file is whitespace",
+      sync: true,
+      syncedValue: { ...synced, content: " \n" },
+      expected: "",
+    },
+  ])("returns $label", ({ sync, syncedValue, expected }) => {
+    expect(
+      getEffectiveCustomInstructions({
+        customInstructions: "typed",
+        syncCustomInstructionsFromFile: sync,
+        syncedCustomInstructions: syncedValue,
+      }),
+    ).toBe(expected);
+  });
 });
 
 describe("feature settingsStore terminal font", () => {

@@ -74,6 +74,19 @@ export interface HintState {
   learned: boolean;
 }
 
+/**
+ * Snapshot of the user-level AGENTS.md/CLAUDE.md that personalization syncs
+ * from. Runtime-only: the sync contribution re-reads the file on boot and
+ * whenever the toggle flips on.
+ */
+export interface SyncedCustomInstructions {
+  path: string;
+  /** Home-relative form of `path` (e.g. `~/.claude/CLAUDE.md`), for display. */
+  displayPath: string;
+  content: string;
+  truncated: boolean;
+}
+
 // ---------- Store shape ----------
 
 interface SettingsStore {
@@ -140,9 +153,17 @@ interface SettingsStore {
   autoConvertLongText: AutoConvertLongText;
   sendMessagesWith: SendMessagesWith;
   customInstructions: string;
+  // When on, personalization mirrors the user-level AGENTS.md (or CLAUDE.md)
+  // instead of the hand-typed customInstructions above.
+  syncCustomInstructionsFromFile: boolean;
+  syncedCustomInstructions: SyncedCustomInstructions | null;
   setAutoConvertLongText: (value: AutoConvertLongText) => void;
   setSendMessagesWith: (mode: SendMessagesWith) => void;
   setCustomInstructions: (instructions: string) => void;
+  setSyncCustomInstructionsFromFile: (enabled: boolean) => void;
+  setSyncedCustomInstructions: (
+    synced: SyncedCustomInstructions | null,
+  ) => void;
 
   // Diff viewer
   diffOpenMode: DiffOpenMode;
@@ -319,10 +340,16 @@ export const useSettingsStore = create<SettingsStore>()(
       autoConvertLongText: "2500",
       sendMessagesWith: "enter",
       customInstructions: "",
+      syncCustomInstructionsFromFile: false,
+      syncedCustomInstructions: null,
       setAutoConvertLongText: (value) => set({ autoConvertLongText: value }),
       setSendMessagesWith: (mode) => set({ sendMessagesWith: mode }),
       setCustomInstructions: (instructions) =>
         set({ customInstructions: instructions }),
+      setSyncCustomInstructionsFromFile: (enabled) =>
+        set({ syncCustomInstructionsFromFile: enabled }),
+      setSyncedCustomInstructions: (synced) =>
+        set({ syncedCustomInstructions: synced }),
 
       // Diff viewer
       diffOpenMode: "auto",
@@ -448,6 +475,7 @@ export const useSettingsStore = create<SettingsStore>()(
         autoConvertLongText: state.autoConvertLongText,
         sendMessagesWith: state.sendMessagesWith,
         customInstructions: state.customInstructions,
+        syncCustomInstructionsFromFile: state.syncCustomInstructionsFromFile,
 
         // Diff viewer
         diffOpenMode: state.diffOpenMode,
@@ -507,6 +535,26 @@ export const useSettingsStore = create<SettingsStore>()(
     },
   ),
 );
+
+/**
+ * The personalization to inject into sessions. Strictly either/or: while file
+ * sync is on, only the synced AGENTS.md/CLAUDE.md snapshot applies (empty when
+ * no file was found) and the hand-typed custom instructions are ignored.
+ */
+export function getEffectiveCustomInstructions(
+  state: Pick<
+    SettingsStore,
+    | "customInstructions"
+    | "syncCustomInstructionsFromFile"
+    | "syncedCustomInstructions"
+  >,
+): string {
+  if (state.syncCustomInstructionsFromFile) {
+    const content = state.syncedCustomInstructions?.content ?? "";
+    return content.trim() ? content : "";
+  }
+  return state.customInstructions;
+}
 
 /**
  * The repository a one-click cloud task should default to: the last-used cloud
