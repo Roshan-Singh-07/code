@@ -34,12 +34,13 @@ import {
   ThreadItemRepliesMeta,
   ThreadItemTimestamp,
 } from "@posthog/quill";
-import { formatRelativeTimeShort } from "@posthog/shared";
+import { formatRelativeTimeShort, getLocalDayDiff } from "@posthog/shared";
 import type { Task, TaskRunStatus } from "@posthog/shared/domain-types";
 import { isTerminalStatus } from "@posthog/shared/domain-types";
 import { getUserInitials } from "@posthog/ui/features/auth/userInitials";
 import { TaskTabIcon } from "@posthog/ui/features/browser-tabs/TaskTabIcon";
 import { mentionChipClass } from "@posthog/ui/features/canvas/components/MentionText";
+import type { ChannelFeedSystemMessage } from "@posthog/ui/features/canvas/hooks/useChannelFeedMessages";
 import { useChannelTaskData } from "@posthog/ui/features/canvas/hooks/useChannelTaskData";
 import { useTaskThread } from "@posthog/ui/features/canvas/hooks/useTaskThread";
 import { userDisplayName } from "@posthog/ui/features/canvas/utils/userDisplay";
@@ -116,9 +117,7 @@ function ordinal(n: number): string {
 // year when it differs) further back so older separators stay unambiguous.
 function dayLabel(iso: string, now: Date): string {
   const date = new Date(iso);
-  const startOfDay = (d: Date) =>
-    new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const days = Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+  const days = getLocalDayDiff(date, now);
   if (days <= 0) return "Today";
   if (days === 1) return "Yesterday";
   const weekday = date.toLocaleDateString(undefined, { weekday: "long" });
@@ -265,9 +264,9 @@ function TaskCard({ task, onOpen }: { task: Task; onOpen: () => void }) {
                 nav never disagree (generating spinner, needs-permission, cloud
                 status colors, PR state). */}
             <TaskTabIcon task={task} size={14} />
-            <Text size="2" weight="medium" className="line-clamp-2">
+            <span className="line-clamp-2 font-medium text-sm">
               {task.title || "Untitled task"}
-            </Text>
+            </span>
           </div>
           <TaskStatusBadge display={statusDisplay} />
         </div>
@@ -379,7 +378,7 @@ const FeedItem = memo(function FeedItem({
   onOpenThread: (task: Task) => void;
 }) {
   return (
-    <ThreadItem className="rounded-none py-4 pr-8 hover:bg-fill-hover/50">
+    <ThreadItem className="rounded-none py-1 pr-8 hover:bg-fill-hover/50">
       <ThreadItemGutter>
         <Avatar>
           <AvatarFallback>
@@ -472,23 +471,108 @@ function FeedRow({
   );
 }
 
+// A card-less feed row for a synthetic announcement. Rows with an `author`
+// render as that user (initials avatar + name — e.g. "Adam L · joined mobile");
+// the rest render as "PostHog / Agent" (context lifecycle updates). Same chrome
+// as a task row, minus the task card and reply footer.
+function SystemFeedRow({ message }: { message: ChannelFeedSystemMessage }) {
+  return (
+    <ChatMessageScrollerItem messageId={message.id}>
+      <ThreadItem className="rounded-none py-1 pr-8">
+        <ThreadItemGutter>
+          <Avatar>
+            <AvatarFallback>
+              {message.author ? (
+                getUserInitials(message.author)
+              ) : (
+                <RobotIcon size={16} />
+              )}
+            </AvatarFallback>
+          </Avatar>
+        </ThreadItemGutter>
+        <ThreadItemContent className="min-w-0">
+          <ThreadItemHeader>
+            <ThreadItemAuthor>
+              {message.author ? userDisplayName(message.author) : "PostHog"}
+            </ThreadItemAuthor>
+            {!message.author && <Badge variant="info">Agent</Badge>}
+            <ThreadItemTimestamp dateTime={message.createdAt}>
+              {formatRelativeTimeShort(message.createdAt)}
+            </ThreadItemTimestamp>
+          </ThreadItemHeader>
+          <ThreadItemBody className="wrap-break-word text-muted-foreground">
+            {message.text}
+          </ThreadItemBody>
+        </ThreadItemContent>
+      </ThreadItem>
+    </ChatMessageScrollerItem>
+  );
+}
+
+// A single feed entry, either a real task card or a synthetic system row, tagged
+// with the timestamp used to interleave the two.
+type FeedEntry =
+  | { kind: "task"; id: string; createdAt: string; task: Task }
+  | {
+      kind: "system";
+      id: string;
+      createdAt: string;
+      message: ChannelFeedSystemMessage;
+    };
+
 // The Slack-style channel feed: every task kicked off in the channel, oldest
 // first, rendered as a kickoff message + task card. Multiplayer — the list is
-// team-visible and polls for teammates' cards and status flips.
+// team-visible and polls for teammates' cards and status flips. Synthetic
+// "PostHog agent" system rows (context lifecycle) are interleaved by timestamp.
 export function ChannelFeedView({
   tasks,
+  systemMessages,
   isLoading,
   emptyState,
+  intro,
   onOpenTask,
   onOpenThread,
 }: {
   tasks: Task[];
+  systemMessages?: ChannelFeedSystemMessage[];
   isLoading: boolean;
   emptyState?: React.ReactNode;
+  /** Rendered pinned above the first entry — the Slack-style channel intro
+   * (name, creation line, onboarding card). When set, the feed renders even
+   * with no entries instead of falling back to `emptyState`. */
+  intro?: ReactNode;
   onOpenTask: (task: Task) => void;
   onOpenThread: (task: Task) => void;
 }) {
-  if (isLoading && tasks.length === 0) {
+  // Merge tasks + system rows into one chronological list. ISO timestamps sort
+  // lexically, so a plain string compare is chronological. Announcements are
+  // posted 1ms before the task they describe; if the backend truncates that
+  // sub-second offset the timestamps tie, so break ties system-row-first to
+  // keep the announcement above its card.
+  const entries = useMemo<FeedEntry[]>(() => {
+    const merged: FeedEntry[] = [
+      ...tasks.map((task) => ({
+        kind: "task" as const,
+        id: task.id,
+        createdAt: task.created_at,
+        task,
+      })),
+      ...(systemMessages ?? []).map((message) => ({
+        kind: "system" as const,
+        id: message.id,
+        createdAt: message.createdAt,
+        message,
+      })),
+    ];
+    merged.sort(
+      (a, b) =>
+        a.createdAt.localeCompare(b.createdAt) ||
+        (a.kind === b.kind ? 0 : a.kind === "system" ? -1 : 1),
+    );
+    return merged;
+  }, [tasks, systemMessages]);
+
+  if (isLoading && entries.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <Spinner />
@@ -496,7 +580,7 @@ export function ChannelFeedView({
     );
   }
 
-  if (tasks.length === 0) {
+  if (entries.length === 0 && !intro) {
     return <div className="flex-1 overflow-y-auto">{emptyState}</div>;
   }
 
@@ -510,25 +594,30 @@ export function ChannelFeedView({
               the row's top-right corner (absolute, past the row edge). Without a
               gutter they hug the scroll container and get clipped. */}
           <ChatMessageScrollerContent className="mx-auto w-full gap-0 py-4">
-            {tasks.map((task, index) => {
-              const previous = tasks[index - 1];
+            {intro}
+            {entries.map((entry, index) => {
+              const previous = entries[index - 1];
               const showDayMarker =
                 !previous ||
-                dayKey(previous.created_at) !== dayKey(task.created_at);
+                dayKey(previous.createdAt) !== dayKey(entry.createdAt);
               return (
-                <Fragment key={task.id}>
+                <Fragment key={entry.id}>
                   {showDayMarker && (
                     <ChatMarker variant="separator">
                       <ChatMarkerContent>
-                        {dayLabel(task.created_at, now)}
+                        {dayLabel(entry.createdAt, now)}
                       </ChatMarkerContent>
                     </ChatMarker>
                   )}
-                  <FeedRow
-                    task={task}
-                    onOpenTask={onOpenTask}
-                    onOpenThread={onOpenThread}
-                  />
+                  {entry.kind === "task" ? (
+                    <FeedRow
+                      task={entry.task}
+                      onOpenTask={onOpenTask}
+                      onOpenThread={onOpenThread}
+                    />
+                  ) : (
+                    <SystemFeedRow message={entry.message} />
+                  )}
                 </Fragment>
               );
             })}
