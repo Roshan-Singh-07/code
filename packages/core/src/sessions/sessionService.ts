@@ -334,6 +334,7 @@ export interface SessionServiceDeps {
     customInstructions?: string | null;
     rtkEnabledLocal?: boolean;
     rtkEnabledCloud?: boolean;
+    spokenNotifications?: boolean;
   };
   usageLimit: { show: (...args: any[]) => any };
   readonly addDirectoryDialog: { open: boolean };
@@ -1085,12 +1086,14 @@ export class SessionService {
           this.d.log.warn("Failed to verify workspace", { taskId, err });
         });
 
-      const { customInstructions, rtkEnabledLocal } = this.d.settings;
+      const { customInstructions, rtkEnabledLocal, spokenNotifications } =
+        this.d.settings;
       const result = await this.d.trpc.agent.reconnect.mutate({
         taskId,
         taskRunId,
         repoPath,
         rtkEnabled: rtkEnabledLocal,
+        spokenNarration: spokenNotifications === true,
         apiHost: auth.apiHost,
         projectId: auth.projectId,
         logUrl,
@@ -1410,7 +1413,11 @@ export class SessionService {
       throw new Error("Failed to create task run. Please try again.");
     }
 
-    const { customInstructions: startCustomInstructions } = this.d.settings;
+    const {
+      customInstructions: startCustomInstructions,
+      rtkEnabledLocal,
+      spokenNotifications,
+    } = this.d.settings;
     const preferredModel = model ?? this.d.DEFAULT_GATEWAY_MODEL;
     const result = await this.d.trpc.agent.start.mutate({
       taskId,
@@ -1421,7 +1428,8 @@ export class SessionService {
       permissionMode: executionMode,
       adapter,
       customInstructions: startCustomInstructions || undefined,
-      rtkEnabled: this.d.settings.rtkEnabledLocal,
+      rtkEnabled: rtkEnabledLocal,
+      spokenNarration: spokenNotifications === true,
       effort: effortLevelSchema.safeParse(reasoningLevel).success
         ? (reasoningLevel as EffortLevel)
         : undefined,
